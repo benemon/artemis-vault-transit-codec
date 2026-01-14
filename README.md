@@ -11,8 +11,8 @@ This codec allows Artemis broker passwords to be encrypted at rest using Vault T
 
 ## Prerequisites
 
-- Java 11 or later
-- Apache ActiveMQ Artemis 2.31.0+
+- Java 17 or later
+- Apache ActiveMQ Artemis 2.39.0+
 - HashiCorp Vault with Transit secrets engine enabled
 
 ## Building
@@ -68,8 +68,10 @@ Parameters in `broker.xml` override environment variables:
 | Parameter | Environment Equivalent | Default | Description |
 |-----------|----------------------|---------|-------------|
 | `vault-addr` | `VAULT_ADDR` | (required) | Vault server address |
+| `transit-mount` | - | `transit` | Transit secrets engine mount path |
 | `transit-key` | - | `artemis` | Transit key name |
-| `namespace` | `VAULT_NAMESPACE` | - | Vault namespace (Enterprise) |
+| `namespace` | `VAULT_NAMESPACE` | - | Vault namespace for authentication (Enterprise) |
+| `transit-namespace` | - | - | Namespace for Transit operations (if different from auth) |
 | `auth-method` | - | `token` | Authentication method: `token` or `approle` |
 | `token-path` | `VAULT_TOKEN_FILE` | `/vault/secrets/.vault-token` | Path to token file |
 | `skip-verify` | `VAULT_SKIP_VERIFY` | `false` | Skip TLS verification |
@@ -80,6 +82,17 @@ Parameters in `broker.xml` override environment variables:
 | `approle-secret-file` | `VAULT_SECRET_ID_FILE` | - | AppRole secret file path |
 | `cache-ttl-seconds` | - | `300` | Password cache TTL (0 to disable) |
 | `max-retries` | - | `3` | Max retries for transient failures |
+
+#### Cross-Namespace Configuration (Vault Enterprise)
+
+When authentication and Transit are in different namespaces, use both `namespace` and `transit-namespace`:
+
+```xml
+<password-codec>com.hashicorp.artemis.VaultTransitCodec;namespace=admin;transit-namespace=admin/tenant;transit-key=artemis</password-codec>
+```
+
+- `namespace`: Where authentication occurs (e.g., `admin`)
+- `transit-namespace`: Where the Transit engine is mounted (e.g., `admin/tenant`)
 
 ## Vault Setup
 

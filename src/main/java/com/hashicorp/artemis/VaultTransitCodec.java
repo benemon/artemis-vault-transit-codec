@@ -323,8 +323,9 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         vaultAddr = getConfig(params, PARAM_VAULT_ADDR, ENV_VAULT_ADDR, null);
         if (vaultAddr == null || vaultAddr.isBlank()) {
             throw new IllegalArgumentException(
-                    "Missing required configuration: Vault address. " +
-                            "Set " + ENV_VAULT_ADDR + " environment variable or " + PARAM_VAULT_ADDR + " parameter.");
+                    "Missing required configuration: Vault address. "
+                            + "Set " + ENV_VAULT_ADDR + " environment variable or "
+                            + PARAM_VAULT_ADDR + " parameter.");
         }
 
         // Transit mount path (allows cross-namespace access)
@@ -646,15 +647,19 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
 
         Map<String, String> responseData = response.getData();
         if (responseData == null || responseData.isEmpty()) {
-            throw new VaultException("Vault Transit decrypt returned empty response", response.getRestResponse().getStatus());
+            throw new VaultException(
+                    "Vault Transit decrypt returned empty response",
+                    response.getRestResponse().getStatus());
         }
 
-        String b64Plaintext = responseData.get("plaintext");
-        if (b64Plaintext == null) {
-            throw new VaultException("Vault Transit decrypt response missing 'plaintext' field", response.getRestResponse().getStatus());
+        String base64Plaintext = responseData.get("plaintext");
+        if (base64Plaintext == null) {
+            throw new VaultException(
+                    "Vault Transit decrypt response missing 'plaintext' field",
+                    response.getRestResponse().getStatus());
         }
 
-        return new String(Base64.getDecoder().decode(b64Plaintext), StandardCharsets.UTF_8);
+        return new String(Base64.getDecoder().decode(base64Plaintext), StandardCharsets.UTF_8);
     }
 
     private boolean isTransientError(VaultException e) {

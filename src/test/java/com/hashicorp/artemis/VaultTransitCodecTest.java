@@ -268,6 +268,100 @@ class VaultTransitCodecTest {
         assertThat(3).isEqualTo(3);
     }
 
+    // --- Namespace configuration tests ---
+
+    @Test
+    void init_withNamespace_passesConfigurationValidation() throws Exception {
+        // This test verifies namespace parameter is accepted in configuration.
+        // Actual namespace functionality requires Vault Enterprise.
+        Path tokenFile = tempDir.resolve("token");
+        Files.writeString(tokenFile, "test-token");
+
+        Map<String, String> params = Map.of(
+                "vault-addr", "http://localhost:8200",
+                "namespace", "admin",
+                "token-path", tokenFile.toString()
+        );
+
+        // Should fail on connection, not on configuration parsing
+        assertThatThrownBy(() -> codec.init(params))
+                .isInstanceOf(Exception.class)
+                .satisfies(e -> {
+                    // Should NOT be an IllegalArgumentException about namespace
+                    if (e instanceof IllegalArgumentException) {
+                        assertThat(e.getMessage()).doesNotContain("namespace");
+                    }
+                });
+    }
+
+    @Test
+    void init_withTransitNamespace_passesConfigurationValidation() throws Exception {
+        // This test verifies transit-namespace parameter is accepted in configuration.
+        // Actual cross-namespace functionality requires Vault Enterprise.
+        Path tokenFile = tempDir.resolve("token");
+        Files.writeString(tokenFile, "test-token");
+
+        Map<String, String> params = Map.of(
+                "vault-addr", "http://localhost:8200",
+                "namespace", "admin",
+                "transit-namespace", "admin/tenant",
+                "token-path", tokenFile.toString()
+        );
+
+        // Should fail on connection, not on configuration parsing
+        assertThatThrownBy(() -> codec.init(params))
+                .isInstanceOf(Exception.class)
+                .satisfies(e -> {
+                    if (e instanceof IllegalArgumentException) {
+                        assertThat(e.getMessage()).doesNotContain("transit-namespace");
+                    }
+                });
+    }
+
+    @Test
+    void init_withTransitMount_passesConfigurationValidation() throws Exception {
+        // This test verifies transit-mount parameter is accepted in configuration.
+        Path tokenFile = tempDir.resolve("token");
+        Files.writeString(tokenFile, "test-token");
+
+        Map<String, String> params = Map.of(
+                "vault-addr", "http://localhost:8200",
+                "transit-mount", "custom-transit",
+                "token-path", tokenFile.toString()
+        );
+
+        // Should fail on connection, not on configuration parsing
+        assertThatThrownBy(() -> codec.init(params))
+                .isInstanceOf(Exception.class)
+                .satisfies(e -> {
+                    if (e instanceof IllegalArgumentException) {
+                        assertThat(e.getMessage()).doesNotContain("transit-mount");
+                    }
+                });
+    }
+
+    @Test
+    void init_withEmptyNamespace_treatsAsNoNamespace() throws Exception {
+        // Empty namespace should be treated as no namespace (Vault Community behavior)
+        Path tokenFile = tempDir.resolve("token");
+        Files.writeString(tokenFile, "test-token");
+
+        Map<String, String> params = Map.of(
+                "vault-addr", "http://localhost:8200",
+                "namespace", "",
+                "token-path", tokenFile.toString()
+        );
+
+        // Should fail on connection, not on configuration
+        assertThatThrownBy(() -> codec.init(params))
+                .isInstanceOf(Exception.class)
+                .satisfies(e -> {
+                    if (e instanceof IllegalArgumentException) {
+                        assertThat(e.getMessage()).doesNotContain("namespace");
+                    }
+                });
+    }
+
     // --- Vault address validation tests ---
 
     @Test

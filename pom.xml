@@ -13,13 +13,13 @@
     <description>SensitiveDataCodec implementation using HashiCorp Vault Transit secrets engine for password encryption/decryption</description>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Dependency versions -->
         <vault-java-driver.version>6.2.1</vault-java-driver.version>
-        <artemis.version>2.31.0</artemis.version>
+        <artemis.version>2.39.0</artemis.version>
         <slf4j.version>2.0.9</slf4j.version>
         <junit.version>5.10.1</junit.version>
         <assertj.version>3.24.2</assertj.version>

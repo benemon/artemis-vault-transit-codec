@@ -166,6 +166,66 @@ class VaultTransitCodecIT {
         assertThat(decoded).isEqualTo("token-file-test");
     }
 
+    // --- Custom transit mount tests ---
+
+    @Test
+    void customTransitMount_roundTrip_succeeds() throws Exception {
+        // Enable Transit at a custom path
+        String customMount = "custom-transit";
+        String customKey = "custom-key";
+
+        vaultContainer.execInContainer("vault", "secrets", "enable", "-path=" + customMount, "transit");
+        vaultContainer.execInContainer("vault", "write", "-f", customMount + "/keys/" + customKey);
+
+        Path tokenFile = tempDir.resolve("vault-token");
+        Files.writeString(tokenFile, ROOT_TOKEN);
+
+        Map<String, String> params = Map.of(
+                "vault-addr", vaultAddr,
+                "transit-mount", customMount,
+                "transit-key", customKey,
+                "token-path", tokenFile.toString()
+        );
+
+        codec.init(params);
+
+        String original = "custom-mount-password";
+        String encoded = codec.encode(original);
+        String decoded = codec.decode(encoded);
+
+        assertThat(decoded).isEqualTo(original);
+    }
+
+    @Test
+    void customTransitMount_withNestedPath_succeeds() throws Exception {
+        // Enable Transit at a nested path (common in multi-tenant setups)
+        String nestedMount = "secrets/team-a/transit";
+        String customKey = "team-key";
+
+        vaultContainer.execInContainer("vault", "secrets", "enable",
+                "-path=" + nestedMount, "transit");
+        vaultContainer.execInContainer("vault", "write", "-f",
+                nestedMount + "/keys/" + customKey);
+
+        Path tokenFile = tempDir.resolve("vault-token");
+        Files.writeString(tokenFile, ROOT_TOKEN);
+
+        Map<String, String> params = Map.of(
+                "vault-addr", vaultAddr,
+                "transit-mount", nestedMount,
+                "transit-key", customKey,
+                "token-path", tokenFile.toString()
+        );
+
+        codec.init(params);
+
+        String original = "nested-path-password";
+        String encoded = codec.encode(original);
+        String decoded = codec.decode(encoded);
+
+        assertThat(decoded).isEqualTo(original);
+    }
+
     // --- AppRole authentication tests ---
 
     @Test
