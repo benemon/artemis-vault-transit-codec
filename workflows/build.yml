@@ -1,0 +1,84 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        java-version: ['17', '21', '25']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn -B clean package -DskipTests -f vault-transit-codec/pom.xml
+
+      - name: Run unit tests
+        run: mvn -B test -f vault-transit-codec/pom.xml
+
+      - name: Run integration tests
+        run: mvn -B failsafe:integration-test failsafe:verify -f vault-transit-codec/pom.xml
+
+      - name: Upload shaded JAR
+        if: matrix.java-version == '17'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-transit-codec-shaded
+          path: vault-transit-codec/target/vault-transit-codec-*-shaded.jar
+          if-no-files-found: error
+
+      - name: Upload standard JAR
+        if: matrix.java-version == '17'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-transit-codec
+          path: |
+            vault-transit-codec/target/vault-transit-codec-*.jar
+            !vault-transit-codec/target/vault-transit-codec-*-shaded.jar
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download shaded JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: vault-transit-codec-shaded
+          path: artifacts
+
+      - name: Download standard JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: vault-transit-codec
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.jar
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
