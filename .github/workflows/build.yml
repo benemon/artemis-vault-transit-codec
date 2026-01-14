@@ -27,14 +27,24 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "revision=-Drevision=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "revision=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build with Maven
-        run: mvn -B clean package -DskipTests
+        run: mvn -B clean package -DskipTests ${{ steps.version.outputs.revision }}
 
       - name: Run unit tests
-        run: mvn -B test
+        run: mvn -B test ${{ steps.version.outputs.revision }}
 
       - name: Run integration tests
-        run: mvn -B failsafe:integration-test failsafe:verify
+        run: mvn -B failsafe:integration-test failsafe:verify ${{ steps.version.outputs.revision }}
 
       - name: Upload shaded JAR
         if: matrix.java-version == '17'

@@ -6,13 +6,16 @@
 
     <groupId>com.hashicorp.artemis</groupId>
     <artifactId>vault-transit-codec</artifactId>
-    <version>1.0.0</version>
+    <version>${revision}</version>
     <packaging>jar</packaging>
 
     <name>Vault Transit Codec for Apache ActiveMQ Artemis</name>
     <description>SensitiveDataCodec implementation using HashiCorp Vault Transit secrets engine for password encryption/decryption</description>
 
     <properties>
+        <!-- CI-friendly versioning: override with -Drevision=X.Y.Z -->
+        <revision>1.0.0-SNAPSHOT</revision>
+
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -233,6 +236,33 @@
                         </manifest>
                     </archive>
                 </configuration>
+            </plugin>
+
+            <!-- Flatten plugin for CI-friendly versioning -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.5.0</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
