@@ -91,7 +91,7 @@ jobs:
           fi
 
       - name: Run integration tests with Vault ${{ matrix.vault-version }}
-        run: mvn -B package -DskipTests failsafe:integration-test failsafe:verify ${{ steps.version.outputs.revision }}
+        run: mvn -B verify -Dsurefire.skip=true ${{ steps.version.outputs.revision }}
         env:
           VAULT_TEST_VERSION: ${{ matrix.vault-version }}
 
