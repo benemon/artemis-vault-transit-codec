@@ -24,9 +24,12 @@ class VaultTransitCodecIT {
 
     private static final String ROOT_TOKEN = "root-test-token";
     private static final String TRANSIT_KEY = "test-key";
+    private static final String VAULT_VERSION = System.getenv("VAULT_TEST_VERSION") != null
+            ? System.getenv("VAULT_TEST_VERSION")
+            : "1.21";
 
     @Container
-    static VaultContainer<?> vaultContainer = new VaultContainer<>("hashicorp/vault:1.15")
+    static VaultContainer<?> vaultContainer = new VaultContainer<>("hashicorp/vault:" + VAULT_VERSION)
             .withVaultToken(ROOT_TOKEN)
             .withInitCommand(
                     "secrets enable transit",

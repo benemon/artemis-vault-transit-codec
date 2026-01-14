@@ -22,13 +22,13 @@
 
         <!-- Dependency versions -->
         <vault-java-driver.version>6.2.1</vault-java-driver.version>
-        <artemis.version>2.39.0</artemis.version>
-        <slf4j.version>2.0.9</slf4j.version>
-        <junit.version>5.10.1</junit.version>
-        <assertj.version>3.24.2</assertj.version>
-        <mockito.version>5.14.2</mockito.version>
-        <testcontainers.version>1.19.3</testcontainers.version>
-        <logback.version>1.4.14</logback.version>
+        <artemis.version>2.44.0</artemis.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <junit.version>6.0.2</junit.version>
+        <assertj.version>3.27.6</assertj.version>
+        <mockito.version>5.21.0</mockito.version>
+        <testcontainers.version>2.0.3</testcontainers.version>
+        <logback.version>1.5.24</logback.version>
     </properties>
 
     <dependencies>
@@ -88,14 +88,14 @@
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy</artifactId>
-            <version>1.15.10</version>
+            <version>1.18.3</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy-agent</artifactId>
-            <version>1.15.10</version>
+            <version>1.18.3</version>
             <scope>test</scope>
         </dependency>
 
@@ -109,14 +109,14 @@
 
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>vault</artifactId>
+            <artifactId>testcontainers-vault</artifactId>
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
