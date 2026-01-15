@@ -21,7 +21,6 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Dependency versions -->
-        <vault-java-driver.version>6.2.1</vault-java-driver.version>
         <artemis.version>2.44.0</artemis.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>6.0.2</junit.version>
@@ -32,13 +31,6 @@
     </properties>
 
     <dependencies>
-        <!-- Vault Java Driver - bundled in shaded JAR -->
-        <dependency>
-            <groupId>io.github.jopenlibs</groupId>
-            <artifactId>vault-java-driver</artifactId>
-            <version>${vault-java-driver.version}</version>
-        </dependency>
-
         <!-- Artemis Commons - provided by Artemis runtime -->
         <dependency>
             <groupId>org.apache.activemq</groupId>
@@ -212,13 +204,6 @@
                                     </excludes>
                                 </filter>
                             </filters>
-                            <relocations>
-                                <!-- Relocate dependencies to avoid conflicts -->
-                                <relocation>
-                                    <pattern>io.github.jopenlibs</pattern>
-                                    <shadedPattern>com.hashicorp.artemis.shaded.vault</shadedPattern>
-                                </relocation>
-                            </relocations>
                         </configuration>
                     </execution>
                 </executions>

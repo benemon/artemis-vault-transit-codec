@@ -1,15 +1,16 @@
 package com.hashicorp.artemis;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-
-import static org.assertj.core.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for VaultTransitCodec configuration validation.
@@ -32,6 +33,7 @@ class VaultTransitCodecTest {
     // --- Configuration validation tests ---
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withMissingVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = new HashMap<>();
         params.put("transit-key", "test-key");
@@ -43,6 +45,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withEmptyVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = Map.of(
                 "vault-addr", "",
@@ -55,6 +58,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withBlankVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = Map.of(
                 "vault-addr", "   ",

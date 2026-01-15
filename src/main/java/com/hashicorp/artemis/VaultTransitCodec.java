@@ -1,27 +1,23 @@
 package com.hashicorp.artemis;
 
+import com.hashicorp.vault.client.SslContextBuilder;
+import com.hashicorp.vault.client.VaultException;
+import com.hashicorp.vault.client.VaultHttpClient;
+import com.hashicorp.vault.client.VaultResponse;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import io.github.jopenlibs.vault.SslConfig;
-import io.github.jopenlibs.vault.Vault;
-import io.github.jopenlibs.vault.VaultConfig;
-import io.github.jopenlibs.vault.VaultException;
-import io.github.jopenlibs.vault.response.AuthResponse;
-import io.github.jopenlibs.vault.response.LogicalResponse;
-import io.github.jopenlibs.vault.response.LookupResponse;
+import javax.net.ssl.SSLContext;
 import org.apache.activemq.artemis.utils.SensitiveDataCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,13 +109,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private int maxRetries;
     private int cacheTtlSeconds;
 
-    // SSL configuration (parsed once, reused for all Vault client builds)
-    private SslConfig sslConfig;
-
     // Runtime state (thread-safe)
-    private Vault vault;           // For auth operations (uses namespace)
-    private Vault transitVault;    // For Transit operations (uses transitNamespace)
-    private volatile String currentToken;
+    private VaultHttpClient vaultClient;
     private ConcurrentHashMap<String, CacheEntry> cache;
     private ScheduledExecutorService renewalExecutor;
 
@@ -156,13 +147,13 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         // 1. Parse and validate configuration
         parseConfiguration(params);
 
-        // 2. Parse SSL configuration (stored for reuse)
-        parseSslConfig(params);
+        // 2. Build SSL context
+        SSLContext sslContext = buildSslContext(params);
 
-        // 3. Build initial Vault client (no token yet, needed for AppRole login)
-        vault = createVaultClient(null);
+        // 3. Create Vault HTTP client
+        vaultClient = new VaultHttpClient(vaultAddr, sslContext, namespace, null);
 
-        // 4. Authenticate (will rebuild client with token)
+        // 4. Authenticate (will set token on client)
         authenticate(params);
 
         // 5. Verify Transit key is accessible
@@ -206,29 +197,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                 .encodeToString(plaintext.getBytes(StandardCharsets.UTF_8));
 
         try {
-            Map<String, Object> requestData = new HashMap<>();
-            requestData.put("plaintext", base64Encoded);
-
-            LogicalResponse response = getTransitVault().logical()
-                    .write(transitMount + "/encrypt/" + transitKey, requestData);
-
-            Map<String, String> responseData = response.getData();
-            int status = response.getRestResponse() != null
-                    ? response.getRestResponse().getStatus() : -1;
-
-            logger.debug("Transit encrypt response - Status: {}, Data keys: {}",
-                    status, responseData != null ? responseData.keySet() : "null");
-
-            if (responseData == null || responseData.isEmpty()) {
-                throw new IllegalStateException(
-                        "Vault Transit encrypt returned empty response. Status: " + status);
-            }
-
-            String ciphertext = responseData.get("ciphertext");
-            if (ciphertext == null) {
-                throw new IllegalStateException(
-                        "Vault Transit encrypt response missing 'ciphertext' field");
-            }
+            String ciphertext = vaultClient.transitEncrypt(
+                    transitMount, transitKey, base64Encoded, transitNamespace);
 
             logger.debug("Successfully encrypted value using transit key '{}'", transitKey);
             return ciphertext;
@@ -382,58 +352,36 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     }
 
     /**
-     * Parses and stores SSL configuration from params. Called once during init.
+     * Builds SSL context from configuration parameters.
      */
-    private void parseSslConfig(Map<String, String> params) throws VaultException {
+    private SSLContext buildSslContext(Map<String, String> params)
+            throws GeneralSecurityException, IOException {
         String skipVerify = getConfig(
                 params, PARAM_SKIP_VERIFY, ENV_VAULT_SKIP_VERIFY, "false");
         if (Boolean.parseBoolean(skipVerify)) {
-            sslConfig = new SslConfig().verify(false).build();
             logger.warn("TLS certificate verification disabled. Not recommended for production.");
-        } else {
-            String caCert = getConfig(params, PARAM_CA_CERT, ENV_VAULT_CACERT, null);
-            String clientCert = getConfig(params, PARAM_CLIENT_CERT, ENV_VAULT_CLIENT_CERT, null);
-            String clientKey = getConfig(params, PARAM_CLIENT_KEY, ENV_VAULT_CLIENT_KEY, null);
+            return SslContextBuilder.create()
+                    .withSkipVerify(true)
+                    .build();
+        }
 
-            if (caCert != null || clientCert != null || clientKey != null) {
-                SslConfig ssl = new SslConfig();
-                if (caCert != null) {
-                    ssl.pemFile(new File(caCert));
-                }
-                if (clientCert != null && clientKey != null) {
-                    ssl.clientPemFile(new File(clientCert));
-                    ssl.clientKeyPemFile(new File(clientKey));
-                }
-                sslConfig = ssl.build();
+        String caCert = getConfig(params, PARAM_CA_CERT, ENV_VAULT_CACERT, null);
+        String clientCert = getConfig(params, PARAM_CLIENT_CERT, ENV_VAULT_CLIENT_CERT, null);
+        String clientKey = getConfig(params, PARAM_CLIENT_KEY, ENV_VAULT_CLIENT_KEY, null);
+
+        if (caCert != null || clientCert != null) {
+            SslContextBuilder builder = SslContextBuilder.create();
+            if (caCert != null) {
+                builder.withCaCert(caCert);
             }
-        }
-    }
-
-    /**
-     * Creates a new Vault client with the auth namespace.
-     */
-    private Vault createVaultClient(String token) throws VaultException {
-        return createVaultClient(token, namespace);
-    }
-
-    /**
-     * Creates a new Vault client with the specified namespace.
-     * This is the single place where VaultConfig is built, ensuring consistency.
-     */
-    private Vault createVaultClient(String token, String ns) throws VaultException {
-        VaultConfig config = new VaultConfig().address(vaultAddr);
-
-        if (ns != null && !ns.isBlank()) {
-            config.nameSpace(ns);
-        }
-        if (sslConfig != null) {
-            config.sslConfig(sslConfig);
-        }
-        if (token != null) {
-            config.token(token);
+            if (clientCert != null && clientKey != null) {
+                builder.withClientCert(clientCert, clientKey);
+            }
+            return builder.build();
         }
 
-        return Vault.create(config.build(), 1);  // Engine version 1 for Transit
+        // No custom SSL config - use default
+        return null;
     }
 
     // --- Authentication ---
@@ -466,7 +414,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                             + PARAM_TOKEN_PATH + " parameter.");
         }
 
-        setAuthenticatedClients(token);
+        vaultClient.setToken(token);
         logger.info("Token authentication configured using {}", tokenSource);
     }
 
@@ -501,8 +449,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
 
         try {
-            AuthResponse authResponse = vault.auth().loginByAppRole(roleId, secretId);
-            setAuthenticatedClients(authResponse.getAuthClientToken());
+            String token = vaultClient.loginAppRole(roleId, secretId);
+            vaultClient.setToken(token);
             logger.info("AppRole authentication successful using {} for secret ID", secretSource);
         } catch (VaultException e) {
             throw new SecurityException(
@@ -510,37 +458,16 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    /**
-     * Sets up Vault clients with the authenticated token.
-     * Creates both the main client and transit client (if using separate namespace).
-     */
-    private void setAuthenticatedClients(String token) throws VaultException {
-        currentToken = token;
-        vault = createVaultClient(token);
-        if (transitNamespace != null) {
-            transitVault = createVaultClient(token, transitNamespace);
-        }
-    }
-
-    /**
-     * Returns the Vault client to use for Transit operations.
-     * Uses transitVault if a separate transit-namespace was configured, otherwise uses the main vault client.
-     */
-    private Vault getTransitVault() {
-        return transitVault != null ? transitVault : vault;
-    }
-
     // --- Transit key verification ---
 
     private void verifyTransitKey() throws Exception {
         try {
             // Try to read key info - verifies the key exists and we have access
-            LogicalResponse response = getTransitVault().logical()
-                    .read(transitMount + "/keys/" + transitKey);
+            VaultResponse response = vaultClient.transitReadKey(
+                    transitMount, transitKey, transitNamespace);
 
             // Empty response means key not found
-            if (response == null || response.getData() == null
-                    || response.getData().isEmpty()) {
+            if (response.getData() == null || response.getData().isEmpty()) {
                 throw new IllegalStateException(
                         "Transit key '" + transitKey + "' not found at mount '"
                                 + transitMount + "'. Create it with: vault write -f "
@@ -574,29 +501,11 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                 .encodeToString("test".getBytes(StandardCharsets.UTF_8));
 
         try {
-            Map<String, Object> encryptRequest = new HashMap<>();
-            encryptRequest.put("plaintext", testPlaintext);
+            String ciphertext = vaultClient.transitEncrypt(
+                    transitMount, transitKey, testPlaintext, transitNamespace);
 
-            LogicalResponse encResponse = getTransitVault().logical()
-                    .write(transitMount + "/encrypt/" + transitKey, encryptRequest);
-
-            Map<String, String> encData = encResponse.getData();
-            if (encData == null || encData.isEmpty()) {
-                throw new IllegalStateException(
-                        "Transit encrypt test returned empty response");
-            }
-
-            String ciphertext = encData.get("ciphertext");
-            if (ciphertext == null) {
-                throw new IllegalStateException(
-                        "Transit encrypt test response missing 'ciphertext' field");
-            }
-
-            Map<String, Object> decryptRequest = new HashMap<>();
-            decryptRequest.put("ciphertext", ciphertext);
-
-            getTransitVault().logical()
-                    .write(transitMount + "/decrypt/" + transitKey, decryptRequest);
+            vaultClient.transitDecrypt(
+                    transitMount, transitKey, ciphertext, transitNamespace);
 
             logger.debug("Transit key '{}' encrypt/decrypt verified at mount '{}'",
                     transitKey, transitMount);
@@ -639,25 +548,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     }
 
     private String doDecrypt(String ciphertext) throws VaultException {
-        Map<String, Object> requestData = new HashMap<>();
-        requestData.put("ciphertext", ciphertext);
-
-        LogicalResponse response = getTransitVault().logical()
-                .write(transitMount + "/decrypt/" + transitKey, requestData);
-
-        Map<String, String> responseData = response.getData();
-        if (responseData == null || responseData.isEmpty()) {
-            throw new VaultException(
-                    "Vault Transit decrypt returned empty response",
-                    response.getRestResponse().getStatus());
-        }
-
-        String base64Plaintext = responseData.get("plaintext");
-        if (base64Plaintext == null) {
-            throw new VaultException(
-                    "Vault Transit decrypt response missing 'plaintext' field",
-                    response.getRestResponse().getStatus());
-        }
+        String base64Plaintext = vaultClient.transitDecrypt(
+                transitMount, transitKey, ciphertext, transitNamespace);
 
         return new String(Base64.getDecoder().decode(base64Plaintext), StandardCharsets.UTF_8);
     }
@@ -702,8 +594,16 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         });
 
         try {
-            LookupResponse lookupResponse = vault.auth().lookupSelf();
-            long ttlSeconds = lookupResponse.getTTL();
+            VaultResponse lookupResponse = vaultClient.lookupSelf();
+            Map<String, Object> data = lookupResponse.getData();
+
+            long ttlSeconds = 0;
+            if (data != null) {
+                Object ttlObj = data.get("ttl");
+                if (ttlObj instanceof Number) {
+                    ttlSeconds = ((Number) ttlObj).longValue();
+                }
+            }
 
             if (ttlSeconds > 0) {
                 // Schedule renewal at 2/3 of TTL (minimum 60 seconds)
@@ -726,7 +626,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
 
     private void renewToken() {
         try {
-            vault.auth().renewSelf();
+            vaultClient.renewSelf();
             logger.debug("Token renewed successfully");
         } catch (VaultException e) {
             logger.error("Token renewal failed: {}. Broker may lose Vault access when token expires.", e.getMessage());
@@ -803,5 +703,19 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         if (cache != null) {
             cache.clear();
         }
+    }
+
+    /**
+     * Package-private getter for injecting a mock VaultHttpClient in tests.
+     */
+    void setVaultClient(VaultHttpClient client) {
+        this.vaultClient = client;
+    }
+
+    /**
+     * Package-private getter for the Vault client (for testing).
+     */
+    VaultHttpClient getVaultClient() {
+        return vaultClient;
     }
 }
