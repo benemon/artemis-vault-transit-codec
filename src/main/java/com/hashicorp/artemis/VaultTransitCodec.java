@@ -190,6 +190,9 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public String encode(Object secret) throws Exception {
+        logger.debug("VaultTransitCodec.encode() called - encrypting value via Vault Transit");
+        logger.debug("Encrypting using transit mount '{}', key '{}'", transitMount, transitKey);
+
         String plaintext = (String) secret;
 
         // Base64 encode the plaintext (required by Vault Transit)
@@ -200,10 +203,12 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
             String ciphertext = vaultClient.transitEncrypt(
                     transitMount, transitKey, base64Encoded, transitNamespace);
 
-            logger.debug("Successfully encrypted value using transit key '{}'", transitKey);
+            logger.debug("VaultTransitCodec.encode() completed - value encrypted successfully");
+            logger.debug("Ciphertext prefix: {}", truncateForLog(ciphertext, 20));
             return ciphertext;
 
         } catch (VaultException e) {
+            logger.error("VaultTransitCodec.encode() failed: {}", e.getMessage());
             throw translateException(e, "encrypt");
         }
     }
@@ -219,10 +224,13 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public String decode(Object mask) throws Exception {
+        logger.debug("VaultTransitCodec.decode() called - decrypting value via Vault Transit");
         String ciphertext = (String) mask;
+        logger.debug("Decrypting ciphertext with prefix: {}", truncateForLog(ciphertext, 20));
 
         // Validate ciphertext format
         if (!ciphertext.startsWith("vault:v")) {
+            logger.error("Invalid ciphertext format - does not start with 'vault:v'");
             throw new IllegalArgumentException(
                     "Invalid ciphertext format. Expected: vault:v{N}:..., got: "
                             + truncateForLog(ciphertext, 20) + "...");
@@ -232,7 +240,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         if (cache != null) {
             CacheEntry entry = cache.get(ciphertext);
             if (entry != null && !entry.isExpired()) {
-                logger.debug("Cache hit for ciphertext");
+                logger.debug("VaultTransitCodec.decode() completed - cache hit (no Vault call)");
+                logger.debug("Returning cached plaintext");
                 return entry.value;
             }
         }
@@ -243,8 +252,10 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         // Cache the result
         if (cache != null) {
             cache.put(ciphertext, new CacheEntry(plaintext, cacheTtlSeconds * 1000L));
+            logger.debug("Cached decrypted value with TTL of {} seconds", cacheTtlSeconds);
         }
 
+        logger.debug("VaultTransitCodec.decode() completed - value decrypted successfully");
         return plaintext;
     }
 
@@ -260,14 +271,18 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public boolean verify(char[] value, String encodedValue) {
+        logger.debug("VaultTransitCodec.verify() called - verifying password against encrypted value");
         try {
             String decoded = decode(encodedValue);
             // Use constant-time comparison to prevent timing attacks
             byte[] a = new String(value).getBytes(StandardCharsets.UTF_8);
             byte[] b = decoded.getBytes(StandardCharsets.UTF_8);
-            return MessageDigest.isEqual(a, b);
+            boolean matches = MessageDigest.isEqual(a, b);
+            logger.debug("VaultTransitCodec.verify() completed - match: {}", matches);
+            return matches;
         } catch (Exception e) {
             // Never throw from verify() - return false on any error
+            logger.warn("VaultTransitCodec.verify() failed with exception: {}", e.getMessage());
             logger.debug("Password verification failed", e);
             return false;
         }
