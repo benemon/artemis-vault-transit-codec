@@ -26,7 +26,7 @@ class AppRoleAuthenticatorTest {
         AppRoleAuthenticator auth = new AppRoleAuthenticator(
                 "role-123", "secret-456", "test source");
 
-        assertThat(auth.getAuthMethod()).isEqualTo("approle");
+        assertThat(auth.getAuthMethod()).isEqualTo(AuthMethod.APPROLE);
         assertThat(auth.getRoleId()).isEqualTo("role-123");
         assertThat(auth.getSecretSource()).isEqualTo("test source");
     }
@@ -52,7 +52,7 @@ class AppRoleAuthenticatorTest {
 
         AppRoleAuthenticator auth = new AppRoleAuthenticator("role-123", secretFile.toString());
 
-        assertThat(auth.getAuthMethod()).isEqualTo("approle");
+        assertThat(auth.getAuthMethod()).isEqualTo(AuthMethod.APPROLE);
         assertThat(auth.getRoleId()).isEqualTo("role-123");
         assertThat(auth.getSecretSource()).contains(secretFile.toString());
     }

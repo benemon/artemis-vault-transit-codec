@@ -1,6 +1,7 @@
 package com.hashicorp.artemis;
 
 import com.hashicorp.vault.client.AppRoleAuthenticator;
+import com.hashicorp.vault.client.AuthMethod;
 import com.hashicorp.vault.client.SslContextBuilder;
 import com.hashicorp.vault.client.TokenAuthenticator;
 import com.hashicorp.vault.client.VaultAuthenticator;
@@ -94,7 +95,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     // Default values
     private static final String DEFAULT_TRANSIT_MOUNT = "transit";
     private static final String DEFAULT_TRANSIT_KEY = "artemis";
-    private static final String DEFAULT_AUTH_METHOD = "token";
+    private static final AuthMethod DEFAULT_AUTH_METHOD = AuthMethod.TOKEN;
     private static final String DEFAULT_TOKEN_PATH = "/vault/secrets/.vault-token";
     private static final int DEFAULT_CACHE_TTL_SECONDS = 300;
     private static final int DEFAULT_MAX_RETRIES = 3;
@@ -106,7 +107,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private String vaultAddr;
     private String transitMount;
     private String transitKey;
-    private String authMethod;
+    private AuthMethod authMethod;
     private String namespace;
     private String transitNamespace;
     private int maxRetries;
@@ -339,11 +340,8 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
 
         // Authentication method
-        authMethod = getConfig(params, PARAM_AUTH_METHOD, null, DEFAULT_AUTH_METHOD);
-        if (!authMethod.equals("token") && !authMethod.equals("approle")) {
-            throw new IllegalArgumentException(
-                    "Invalid auth-method: '" + authMethod + "'. Supported values: token, approle");
-        }
+        String authMethodStr = getConfig(params, PARAM_AUTH_METHOD, null, DEFAULT_AUTH_METHOD.getValue());
+        authMethod = AuthMethod.fromValue(authMethodStr);
 
         // Max retries
         String maxRetriesStr = getConfig(params, PARAM_MAX_RETRIES, null, String.valueOf(DEFAULT_MAX_RETRIES));
@@ -420,7 +418,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      * @return the configured authenticator
      */
     private VaultAuthenticator createAuthenticator(Map<String, String> params) {
-        if ("approle".equals(authMethod)) {
+        if (authMethod == AuthMethod.APPROLE) {
             return createAppRoleAuthenticator(params);
         } else {
             return createTokenAuthenticator(params);

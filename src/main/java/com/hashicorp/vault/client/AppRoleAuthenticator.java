@@ -63,12 +63,8 @@ public class AppRoleAuthenticator implements VaultAuthenticator {
      * @param secretSource description of where the secret came from (for logging)
      */
     public AppRoleAuthenticator(String roleId, String secretId, String secretSource) {
-        if (roleId == null || roleId.isBlank()) {
-            throw new IllegalArgumentException("Role ID cannot be null or blank");
-        }
-        if (secretId == null || secretId.isBlank()) {
-            throw new IllegalArgumentException("Secret ID cannot be null or blank");
-        }
+        Preconditions.requireNonBlank(roleId, "Role ID");
+        Preconditions.requireNonBlank(secretId, "Secret ID");
         this.roleId = roleId;
         this.staticSecretId = secretId;
         this.secretFilePath = null;
@@ -86,12 +82,8 @@ public class AppRoleAuthenticator implements VaultAuthenticator {
      * @param secretFilePath path to file containing the secret ID
      */
     public AppRoleAuthenticator(String roleId, String secretFilePath) {
-        if (roleId == null || roleId.isBlank()) {
-            throw new IllegalArgumentException("Role ID cannot be null or blank");
-        }
-        if (secretFilePath == null || secretFilePath.isBlank()) {
-            throw new IllegalArgumentException("Secret file path cannot be null or blank");
-        }
+        Preconditions.requireNonBlank(roleId, "Role ID");
+        Preconditions.requireNonBlank(secretFilePath, "Secret file path");
         this.roleId = roleId;
         this.staticSecretId = null;
         this.secretFilePath = secretFilePath;
@@ -111,12 +103,8 @@ public class AppRoleAuthenticator implements VaultAuthenticator {
      * @throws IllegalArgumentException if roleId or envVarName is null/blank
      */
     private static AppRoleAuthenticator fromEnvironmentVariable(String roleId, String envVarName) {
-        if (roleId == null || roleId.isBlank()) {
-            throw new IllegalArgumentException("Role ID cannot be null or blank");
-        }
-        if (envVarName == null || envVarName.isBlank()) {
-            throw new IllegalArgumentException("Environment variable name cannot be null or blank");
-        }
+        Preconditions.requireNonBlank(roleId, "Role ID");
+        Preconditions.requireNonBlank(envVarName, "Environment variable name");
         return new AppRoleAuthenticator(roleId, envVarName, (Void) null);
     }
 
@@ -181,8 +169,8 @@ public class AppRoleAuthenticator implements VaultAuthenticator {
     }
 
     @Override
-    public String getAuthMethod() {
-        return "approle";
+    public AuthMethod getAuthMethod() {
+        return AuthMethod.APPROLE;
     }
 
     @Override

@@ -22,7 +22,7 @@ class TokenAuthenticatorTest {
     void constructor_withValidToken_succeeds() {
         TokenAuthenticator auth = new TokenAuthenticator("hvs.test-token", "test source");
 
-        assertThat(auth.getAuthMethod()).isEqualTo("token");
+        assertThat(auth.getAuthMethod()).isEqualTo(AuthMethod.TOKEN);
         assertThat(auth.getTokenSource()).isEqualTo("test source");
     }
 

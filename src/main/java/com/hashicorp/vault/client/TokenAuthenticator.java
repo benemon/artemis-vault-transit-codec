@@ -42,9 +42,7 @@ public class TokenAuthenticator implements VaultAuthenticator {
      * @param tokenSource description of where the token came from (for logging)
      */
     public TokenAuthenticator(String token, String tokenSource) {
-        if (token == null || token.isBlank()) {
-            throw new IllegalArgumentException("Token cannot be null or blank");
-        }
+        Preconditions.requireNonBlank(token, "Token");
         this.token = token;
         this.tokenSource = tokenSource;
     }
@@ -96,8 +94,8 @@ public class TokenAuthenticator implements VaultAuthenticator {
     }
 
     @Override
-    public String getAuthMethod() {
-        return "token";
+    public AuthMethod getAuthMethod() {
+        return AuthMethod.TOKEN;
     }
 
     @Override

@@ -33,13 +33,13 @@ package com.hashicorp.vault.client;
 public interface VaultAuthenticator {
 
     /**
-     * Returns the name of this authentication method.
+     * Returns the authentication method used by this authenticator.
      *
-     * <p>Used for logging and configuration matching (e.g., "token", "approle", "aws", "kubernetes").
+     * <p>Used for logging and configuration matching.
      *
-     * @return the auth method name
+     * @return the auth method
      */
-    String getAuthMethod();
+    AuthMethod getAuthMethod();
 
     /**
      * Performs initial authentication and sets the token on the client.
