@@ -420,9 +420,13 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private VaultAuthenticator createAuthenticator(Map<String, String> params) {
         if (authMethod == AuthMethod.APPROLE) {
             return createAppRoleAuthenticator(params);
-        } else {
+        }
+        if (authMethod == AuthMethod.TOKEN) {
             return createTokenAuthenticator(params);
         }
+        throw new IllegalStateException(
+                "Unsupported auth method: " + authMethod + ". This should not happen - " +
+                "AuthMethod.fromValue() should have rejected invalid values.");
     }
 
     private TokenAuthenticator createTokenAuthenticator(Map<String, String> params) {
