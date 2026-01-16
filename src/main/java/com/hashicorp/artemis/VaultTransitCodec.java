@@ -1,6 +1,9 @@
 package com.hashicorp.artemis;
 
+import com.hashicorp.vault.client.AppRoleAuthenticator;
 import com.hashicorp.vault.client.SslContextBuilder;
+import com.hashicorp.vault.client.TokenAuthenticator;
+import com.hashicorp.vault.client.VaultAuthenticator;
 import com.hashicorp.vault.client.VaultException;
 import com.hashicorp.vault.client.VaultHttpClient;
 import com.hashicorp.vault.client.VaultResponse;
@@ -111,6 +114,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
 
     // Runtime state (thread-safe)
     private VaultHttpClient vaultClient;
+    private VaultAuthenticator authenticator;
     private ConcurrentHashMap<String, CacheEntry> cache;
     private ScheduledExecutorService renewalExecutor;
 
@@ -402,38 +406,36 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     // --- Authentication ---
 
     private void authenticate(Map<String, String> params) throws Exception {
+        authenticator = createAuthenticator(params);
+        authenticator.authenticate(vaultClient);
+    }
+
+    /**
+     * Creates the appropriate authenticator based on configuration.
+     *
+     * <p>This method implements the factory pattern, returning the correct
+     * authenticator implementation based on the configured auth method.
+     *
+     * @param params configuration parameters
+     * @return the configured authenticator
+     */
+    private VaultAuthenticator createAuthenticator(Map<String, String> params) {
         if ("approle".equals(authMethod)) {
-            authenticateAppRole(params);
+            return createAppRoleAuthenticator(params);
         } else {
-            authenticateToken(params);
+            return createTokenAuthenticator(params);
         }
     }
 
-    private void authenticateToken(Map<String, String> params) throws Exception {
+    private TokenAuthenticator createTokenAuthenticator(Map<String, String> params) {
         // Resolution order: VAULT_TOKEN env → VAULT_TOKEN_FILE / token-path file
-        String token = System.getenv(ENV_VAULT_TOKEN);
-        String tokenSource = ENV_VAULT_TOKEN + " environment variable";
+        String tokenPath = getConfig(
+                params, PARAM_TOKEN_PATH, ENV_VAULT_TOKEN_FILE, DEFAULT_TOKEN_PATH);
 
-        if (token == null || token.isBlank()) {
-            // Try token file
-            String tokenPath = getConfig(
-                    params, PARAM_TOKEN_PATH, ENV_VAULT_TOKEN_FILE, DEFAULT_TOKEN_PATH);
-            token = readFileContents(tokenPath);
-            tokenSource = "token file: " + tokenPath;
-        }
-
-        if (token == null || token.isBlank()) {
-            throw new SecurityException(
-                    "No Vault token found. Set " + ENV_VAULT_TOKEN + " environment variable, "
-                            + "or configure token file via " + ENV_VAULT_TOKEN_FILE + " / "
-                            + PARAM_TOKEN_PATH + " parameter.");
-        }
-
-        vaultClient.setToken(token);
-        logger.info("Token authentication configured using {}", tokenSource);
+        return TokenAuthenticator.create(ENV_VAULT_TOKEN, tokenPath);
     }
 
-    private void authenticateAppRole(Map<String, String> params) throws Exception {
+    private AppRoleAuthenticator createAppRoleAuthenticator(Map<String, String> params) {
         // Role ID resolution
         String roleId = getConfig(params, PARAM_APPROLE_ID, ENV_VAULT_ROLE_ID, null);
         if (roleId == null || roleId.isBlank()) {
@@ -442,35 +444,11 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                             + " environment variable or " + PARAM_APPROLE_ID + " parameter.");
         }
 
-        // Secret ID resolution: VAULT_SECRET_ID env → secret file
-        String secretId = System.getenv(ENV_VAULT_SECRET_ID);
-        String secretSource = ENV_VAULT_SECRET_ID + " environment variable";
+        // Secret file path (preferred for re-authentication support)
+        String secretFile = getConfig(
+                params, PARAM_APPROLE_SECRET_FILE, ENV_VAULT_SECRET_ID_FILE, null);
 
-        if (secretId == null || secretId.isBlank()) {
-            String secretFile = getConfig(
-                    params, PARAM_APPROLE_SECRET_FILE, ENV_VAULT_SECRET_ID_FILE, null);
-            if (secretFile != null) {
-                secretId = readFileContents(secretFile);
-                secretSource = "secret file: " + secretFile;
-            }
-        }
-
-        if (secretId == null || secretId.isBlank()) {
-            throw new SecurityException(
-                    "AppRole authentication requires secret ID. Set " + ENV_VAULT_SECRET_ID
-                            + " environment variable, or configure secret file via "
-                            + ENV_VAULT_SECRET_ID_FILE + " / " + PARAM_APPROLE_SECRET_FILE
-                            + " parameter.");
-        }
-
-        try {
-            String token = vaultClient.loginAppRole(roleId, secretId);
-            vaultClient.setToken(token);
-            logger.info("AppRole authentication successful using {} for secret ID", secretSource);
-        } catch (VaultException e) {
-            throw new SecurityException(
-                    "AppRole authentication failed: " + e.getMessage(), e);
-        }
+        return AppRoleAuthenticator.create(roleId, ENV_VAULT_SECRET_ID, secretFile);
     }
 
     // --- Transit key verification ---
@@ -644,8 +622,74 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
             vaultClient.renewSelf();
             logger.debug("Token renewed successfully");
         } catch (VaultException e) {
-            logger.error("Token renewal failed: {}. Broker may lose Vault access when token expires.", e.getMessage());
-            // For AppRole, could attempt re-authentication here in a future enhancement
+            logger.warn("Token renewal failed: {}. Attempting re-authentication...", e.getMessage());
+            attemptReauthentication();
+        }
+    }
+
+    /**
+     * Attempts to re-authenticate when token renewal fails.
+     *
+     * <p>This method is called when token renewal fails, which typically happens when:
+     * <ul>
+     *   <li>Token has reached its max TTL and cannot be renewed further</li>
+     *   <li>Token was revoked</li>
+     *   <li>Token accessor was invalidated</li>
+     * </ul>
+     *
+     * <p>If the authenticator supports re-authentication (e.g., AppRole with secret file),
+     * it will obtain fresh credentials and perform a new login. Otherwise, manual
+     * intervention is required.
+     */
+    private void attemptReauthentication() {
+        if (authenticator == null) {
+            logger.error("No authenticator configured. Broker may lose Vault access.");
+            return;
+        }
+
+        if (!authenticator.supportsReauthentication()) {
+            logger.error("Token renewal failed and {} authentication does not support automatic " +
+                    "re-authentication. Manual intervention required. Consider using AppRole with " +
+                    "a secret file for automatic token refresh.", authenticator.getAuthMethod());
+            return;
+        }
+
+        try {
+            authenticator.reauthenticate(vaultClient);
+            logger.info("Re-authentication successful using {} method", authenticator.getAuthMethod());
+
+            // After successful re-auth, reschedule token renewal with new TTL
+            rescheduleTokenRenewal();
+        } catch (Exception e) {
+            logger.error("Re-authentication failed: {}. Broker may lose Vault access.", e.getMessage());
+            logger.debug("Re-authentication failure details", e);
+        }
+    }
+
+    /**
+     * Reschedules token renewal after re-authentication.
+     *
+     * <p>Called after successful re-authentication to set up renewal based on the new token's TTL.
+     */
+    private void rescheduleTokenRenewal() {
+        try {
+            VaultResponse lookupResponse = vaultClient.lookupSelf();
+            Map<String, Object> data = lookupResponse.getData();
+
+            long ttlSeconds = 0;
+            if (data != null) {
+                Object ttlObj = data.get("ttl");
+                if (ttlObj instanceof Number) {
+                    ttlSeconds = ((Number) ttlObj).longValue();
+                }
+            }
+
+            if (ttlSeconds > 0) {
+                long renewalDelay = Math.max(ttlSeconds * 2 / 3, MIN_RENEWAL_INTERVAL_SECONDS);
+                logger.info("New token TTL: {}s, next renewal in {}s", ttlSeconds, renewalDelay);
+            }
+        } catch (VaultException e) {
+            logger.warn("Could not determine new token TTL: {}", e.getMessage());
         }
     }
 
@@ -671,22 +715,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
 
         // Return default
         return defaultValue;
-    }
-
-    /**
-     * Read contents of a file, returning null if file doesn't exist or can't be read.
-     */
-    private String readFileContents(String path) {
-        if (path == null || path.isBlank()) {
-            return null;
-        }
-        try {
-            String contents = Files.readString(Path.of(path));
-            return contents.trim();
-        } catch (IOException e) {
-            logger.debug("Could not read file {}: {}", path, e.getMessage());
-            return null;
-        }
     }
 
     /**

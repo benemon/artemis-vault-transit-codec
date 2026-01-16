@@ -106,13 +106,15 @@ class JsonUtilTest {
     @Test
     void parseObject_withIntegerValue_parsesCorrectly() {
         Map<String, Object> result = JsonUtil.parseObject("{\"count\":42}");
-        assertThat(result).containsEntry("count", 42);
+        // Gson parses numbers as Double by default
+        assertThat(((Number) result.get("count")).intValue()).isEqualTo(42);
     }
 
     @Test
     void parseObject_withLongValue_parsesCorrectly() {
         Map<String, Object> result = JsonUtil.parseObject("{\"big\":9999999999}");
-        assertThat(result).containsEntry("big", 9999999999L);
+        // Gson parses numbers as Double by default
+        assertThat(((Number) result.get("big")).longValue()).isEqualTo(9999999999L);
     }
 
     @Test
@@ -168,7 +170,8 @@ class JsonUtilTest {
                 }
                 """;
         Map<String, Object> result = JsonUtil.parseObject(json);
-        assertThat(result).containsEntry("key", "value").containsEntry("number", 42);
+        assertThat(result).containsEntry("key", "value");
+        assertThat(((Number) result.get("number")).intValue()).isEqualTo(42);
     }
 
     @Test
@@ -253,7 +256,7 @@ class JsonUtilTest {
         Map<String, Object> parsed = JsonUtil.parseObject(json);
 
         assertThat(parsed).containsEntry("string", "hello");
-        assertThat(parsed).containsEntry("number", 42);
+        assertThat(((Number) parsed.get("number")).intValue()).isEqualTo(42);
         assertThat(parsed).containsEntry("bool", true);
     }
 
@@ -287,6 +290,6 @@ class JsonUtilTest {
         Map<String, Object> auth = (Map<String, Object>) result.get("auth");
         assertThat(auth).containsEntry("client_token", "hvs.CAESIJlU");
         assertThat(auth).containsEntry("renewable", true);
-        assertThat(auth).containsEntry("lease_duration", 3600);
+        assertThat(((Number) auth.get("lease_duration")).intValue()).isEqualTo(3600);
     }
 }

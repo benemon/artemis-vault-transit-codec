@@ -143,7 +143,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Cannot read token file");
     }
 
     @Test
@@ -158,7 +158,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Token file is empty");
     }
 
     @Test
@@ -173,7 +173,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Token file is empty");
     }
 
     // --- AppRole authentication config tests ---
@@ -205,6 +205,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_SECRET_ID", matches = ".+")
     void init_withAppRole_missingSecretId_throwsSecurityException() {
         Map<String, String> params = Map.of(
                 "vault-addr", "http://localhost:8200",
@@ -213,6 +214,7 @@ class VaultTransitCodecTest {
                 "approle-secret-file", "/nonexistent/secret"
         );
 
+        // When secret file doesn't exist AND env var is not set, should fail
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
                 .hasMessageContaining("secret ID");

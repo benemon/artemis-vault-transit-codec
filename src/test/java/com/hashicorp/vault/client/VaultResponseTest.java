@@ -41,9 +41,9 @@ class VaultResponseTest {
         String json = "{\"auth\":{\"client_token\":\"hvs.test\",\"lease_duration\":3600}}";
         VaultResponse response = VaultResponse.fromJson(200, json);
 
-        assertThat(response.getAuth())
-                .containsEntry("client_token", "hvs.test")
-                .containsEntry("lease_duration", 3600);
+        assertThat(response.getAuth()).containsEntry("client_token", "hvs.test");
+        // Gson parses numbers as Double by default
+        assertThat(((Number) response.getAuth().get("lease_duration")).intValue()).isEqualTo(3600);
     }
 
     @Test
