@@ -163,18 +163,26 @@ vault write -f auth/approle/role/artemis-codec/secret-id
 
 ## Usage
 
-### 1. Mask Passwords
+### 1. Configure broker.xml
 
-Use the Artemis CLI to encrypt passwords:
+First, configure the codec in broker.xml:
+
+```xml
+<core xmlns="urn:activemq:core">
+    <!-- Configure the codec -->
+    <password-codec>com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis</password-codec>
+</core>
+```
+
+### 2. Mask Passwords
+
+Use the Artemis CLI to encrypt passwords. The command reads the codec from broker.xml:
 
 ```bash
 export VAULT_ADDR=https://vault:8200
 export VAULT_TOKEN=s.xxxxx
 
-cd $ARTEMIS_INSTANCE
-./artemis mask \
-  --password-codec "com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis" \
-  myClusterPassword
+./bin/artemis mask myClusterPassword --password-codec=true
 ```
 
 Output:
@@ -182,9 +190,9 @@ Output:
 result: vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ
 ```
 
-### 2. Update broker.xml
+### 3. Update broker.xml with Encrypted Passwords
 
-Wrap the ciphertext with `ENC()`:
+Add the encrypted passwords to broker.xml, wrapped with `ENC()`:
 
 ```xml
 <core xmlns="urn:activemq:core">
@@ -202,7 +210,7 @@ Wrap the ciphertext with `ENC()`:
 </core>
 ```
 
-### 3. Start Broker
+### 4. Start Broker
 
 Ensure Vault environment variables are set, then start the broker:
 
@@ -215,15 +223,15 @@ export VAULT_TOKEN_FILE=/vault/secrets/.vault-token
 
 Look for this log message to confirm successful initialization:
 ```
-INFO  [com.hashicorp.artemis.VaultTransitCodec] VaultTransitCodec initialized successfully. Vault: https://vault:8200, Transit key: artemis, Auth method: token
+INFO  [com.hashicorp.artemis.VaultTransitCodec] VaultTransitCodec initialized. Vault: https://vault:8200, NS: (root), Mount: transit, Key: artemis, Auth: token
 ```
 
-### 4. Update artemis-users.properties
+### 5. Update artemis-users.properties
 
 The codec also works with user passwords in `artemis-users.properties`. First mask each password using the codec configured in `broker.xml`:
 
 ```bash
-./artemis mask --password-codec true adminPassword123
+./bin/artemis mask adminPassword123 --password-codec=true
 ```
 
 Then update the properties file with encrypted passwords:

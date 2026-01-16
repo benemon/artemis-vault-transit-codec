@@ -21,7 +21,6 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Dependency versions -->
-        <vault-java-driver.version>6.2.1</vault-java-driver.version>
         <artemis.version>2.44.0</artemis.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>6.0.2</junit.version>
@@ -29,14 +28,15 @@
         <mockito.version>5.21.0</mockito.version>
         <testcontainers.version>2.0.3</testcontainers.version>
         <logback.version>1.5.24</logback.version>
+        <gson.version>2.10.1</gson.version>
     </properties>
 
     <dependencies>
-        <!-- Vault Java Driver - bundled in shaded JAR -->
+        <!-- JSON parsing -->
         <dependency>
-            <groupId>io.github.jopenlibs</groupId>
-            <artifactId>vault-java-driver</artifactId>
-            <version>${vault-java-driver.version}</version>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
         </dependency>
 
         <!-- Artemis Commons - provided by Artemis runtime -->
@@ -212,13 +212,6 @@
                                     </excludes>
                                 </filter>
                             </filters>
-                            <relocations>
-                                <!-- Relocate dependencies to avoid conflicts -->
-                                <relocation>
-                                    <pattern>io.github.jopenlibs</pattern>
-                                    <shadedPattern>com.hashicorp.artemis.shaded.vault</shadedPattern>
-                                </relocation>
-                            </relocations>
                         </configuration>
                     </execution>
                 </executions>

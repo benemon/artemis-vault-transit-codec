@@ -1,15 +1,16 @@
 package com.hashicorp.artemis;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-
-import static org.assertj.core.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for VaultTransitCodec configuration validation.
@@ -32,6 +33,7 @@ class VaultTransitCodecTest {
     // --- Configuration validation tests ---
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withMissingVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = new HashMap<>();
         params.put("transit-key", "test-key");
@@ -43,6 +45,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withEmptyVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = Map.of(
                 "vault-addr", "",
@@ -55,6 +58,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_ADDR", matches = ".+")
     void init_withBlankVaultAddr_throwsIllegalArgument() {
         Map<String, String> params = Map.of(
                 "vault-addr", "   ",
@@ -139,7 +143,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Cannot read token file");
     }
 
     @Test
@@ -154,7 +158,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Token file is empty");
     }
 
     @Test
@@ -169,7 +173,7 @@ class VaultTransitCodecTest {
 
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("No Vault token found");
+                .hasMessageContaining("Token file is empty");
     }
 
     // --- AppRole authentication config tests ---
@@ -201,6 +205,7 @@ class VaultTransitCodecTest {
     }
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "VAULT_SECRET_ID", matches = ".+")
     void init_withAppRole_missingSecretId_throwsSecurityException() {
         Map<String, String> params = Map.of(
                 "vault-addr", "http://localhost:8200",
@@ -209,6 +214,7 @@ class VaultTransitCodecTest {
                 "approle-secret-file", "/nonexistent/secret"
         );
 
+        // When secret file doesn't exist AND env var is not set, should fail
         assertThatThrownBy(() -> codec.init(params))
                 .isInstanceOf(SecurityException.class)
                 .hasMessageContaining("secret ID");
