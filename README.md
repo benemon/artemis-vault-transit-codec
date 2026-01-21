@@ -170,7 +170,6 @@ For general password masking concepts (`artemis mask`, `ENC()` syntax, supported
 ```xml
 <core xmlns="urn:activemq:core">
     <password-codec>com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis</password-codec>
-    <cluster-password>ENC(vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ)</cluster-password>
 </core>
 ```
 
@@ -186,7 +185,16 @@ export VAULT_TOKEN=s.xxxxx
 # Output: vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ
 ```
 
-### 3. Start Broker
+### 3. Update broker.xml
+
+```xml
+<core xmlns="urn:activemq:core">
+    <password-codec>com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis</password-codec>
+    <cluster-password>ENC(vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ)</cluster-password>
+</core>
+```
+
+### 4. Start Broker
 
 ```bash
 export VAULT_ADDR=https://vault:8200
