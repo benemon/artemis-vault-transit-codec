@@ -252,20 +252,10 @@ public class AppRoleAuthenticator implements VaultAuthenticator {
         }
     }
 
-    /**
-     * Returns the role ID used for authentication.
-     *
-     * @return the role ID
-     */
     public String getRoleId() {
         return roleId;
     }
 
-    /**
-     * Returns a description of the secret source (for logging).
-     *
-     * @return the secret source description
-     */
     public String getSecretSource() {
         return secretSource;
     }

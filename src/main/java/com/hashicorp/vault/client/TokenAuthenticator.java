@@ -117,11 +117,6 @@ public class TokenAuthenticator implements VaultAuthenticator {
                         "Consider using AppRole authentication for automatic token refresh.");
     }
 
-    /**
-     * Returns a description of the token source (for logging).
-     *
-     * @return the token source description
-     */
     public String getTokenSource() {
         return tokenSource;
     }
