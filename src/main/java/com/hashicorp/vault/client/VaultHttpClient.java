@@ -97,84 +97,31 @@ public class VaultHttpClient {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
-    // --- Token Management ---
-
-    /**
-     * Sets the authentication token for subsequent requests.
-     *
-     * @param token the Vault token
-     */
     public void setToken(String token) {
         this.token = token;
     }
 
-    /**
-     * Gets the current authentication token.
-     *
-     * @return the current token, or null if not set
-     */
     public String getToken() {
         return token;
     }
 
-    /**
-     * Sets the namespace for subsequent requests.
-     *
-     * @param namespace the Vault namespace, or null for root
-     */
     public void setNamespace(String namespace) {
         this.namespace = namespace;
     }
 
-    // --- Core HTTP Methods ---
-
-    /**
-     * Performs a GET request to the specified Vault API path.
-     *
-     * @param path the API path (e.g., "/v1/auth/token/lookup-self")
-     * @return the parsed JSON response
-     * @throws VaultException if the request fails or returns an error
-     */
     public VaultResponse get(String path) throws VaultException {
         return get(path, null);
     }
 
-    /**
-     * Performs a GET request with optional namespace override.
-     *
-     * @param path              the API path
-     * @param namespaceOverride namespace to use instead of default, or null
-     * @return the parsed JSON response
-     * @throws VaultException if the request fails
-     */
     public VaultResponse get(String path, String namespaceOverride) throws VaultException {
-        HttpRequest request = buildRequest(path, namespaceOverride)
-                .GET()
-                .build();
+        HttpRequest request = buildRequest(path, namespaceOverride).GET().build();
         return execute(request);
     }
 
-    /**
-     * Performs a POST request to the specified Vault API path.
-     *
-     * @param path the API path (e.g., "/v1/transit/encrypt/mykey")
-     * @param body the request body as a map (will be JSON-encoded)
-     * @return the parsed JSON response
-     * @throws VaultException if the request fails
-     */
     public VaultResponse post(String path, Map<String, Object> body) throws VaultException {
         return post(path, body, null);
     }
 
-    /**
-     * Performs a POST request with optional namespace override.
-     *
-     * @param path              the API path
-     * @param body              the request body
-     * @param namespaceOverride namespace override, or null
-     * @return the parsed JSON response
-     * @throws VaultException if the request fails
-     */
     public VaultResponse post(String path, Map<String, Object> body, String namespaceOverride)
             throws VaultException {
         String jsonBody = body != null ? JsonUtil.toJson(body) : "{}";
@@ -185,14 +132,7 @@ public class VaultHttpClient {
         return execute(request);
     }
 
-    /**
-     * Performs a POST request without authentication (for AppRole login).
-     *
-     * @param path the API path
-     * @param body the request body
-     * @return the parsed JSON response
-     * @throws VaultException if the request fails
-     */
+    /** POST without authentication (for AppRole login). */
     public VaultResponse postUnauthenticated(String path, Map<String, Object> body)
             throws VaultException {
         String jsonBody = body != null ? JsonUtil.toJson(body) : "{}";
@@ -202,32 +142,23 @@ public class VaultHttpClient {
                 .timeout(requestTimeout)
                 .header("Content-Type", CONTENT_TYPE_JSON);
 
-        // Add namespace header if set (AppRole login still uses namespace)
         if (namespace != null && !namespace.isBlank()) {
             builder.header(HEADER_VAULT_NAMESPACE, namespace);
         }
 
-        HttpRequest request = builder
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        return execute(request);
+        return execute(builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build());
     }
-
-    // --- Request Building ---
 
     private HttpRequest.Builder buildRequest(String path, String namespaceOverride) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
                 .timeout(requestTimeout);
 
-        // Add token header
         String currentToken = this.token;
         if (currentToken != null && !currentToken.isBlank()) {
             builder.header(HEADER_VAULT_TOKEN, currentToken);
         }
 
-        // Add namespace header (override takes precedence)
         String ns = namespaceOverride != null ? namespaceOverride : namespace;
         if (ns != null && !ns.isBlank()) {
             builder.header(HEADER_VAULT_NAMESPACE, ns);
@@ -264,16 +195,7 @@ public class VaultHttpClient {
         }
     }
 
-    // --- Convenience Methods for Common Vault Operations ---
-
-    /**
-     * Authenticates using AppRole and returns the client token.
-     *
-     * @param roleId   the AppRole role ID
-     * @param secretId the AppRole secret ID
-     * @return the authenticated client token
-     * @throws VaultException if authentication fails
-     */
+    /** Authenticates using AppRole and returns the client token. */
     public String loginAppRole(String roleId, String secretId) throws VaultException {
         VaultResponse response = postUnauthenticated("/v1/auth/approle/login",
                 Map.of("role_id", roleId, "secret_id", secretId));
@@ -293,35 +215,17 @@ public class VaultHttpClient {
         return clientToken;
     }
 
-    /**
-     * Looks up the current token's metadata.
-     *
-     * @return the token lookup response containing TTL and other metadata
-     * @throws VaultException if the lookup fails
-     */
+    /** Looks up the current token's metadata (TTL, policies, etc.). */
     public VaultResponse lookupSelf() throws VaultException {
         return get("/v1/auth/token/lookup-self");
     }
 
-    /**
-     * Renews the current token.
-     *
-     * @throws VaultException if renewal fails
-     */
+    /** Renews the current token. */
     public void renewSelf() throws VaultException {
         post("/v1/auth/token/renew-self", Map.of());
     }
 
-    /**
-     * Encrypts plaintext using Transit secrets engine.
-     *
-     * @param mount            the Transit mount path (e.g., "transit")
-     * @param keyName          the encryption key name
-     * @param base64Plaintext  the plaintext to encrypt (must be base64-encoded)
-     * @param namespaceOverride optional namespace override for cross-namespace access
-     * @return the ciphertext (format: vault:v{N}:...)
-     * @throws VaultException if encryption fails
-     */
+    /** Encrypts base64-encoded plaintext using Transit, returns ciphertext (vault:v{N}:...). */
     public String transitEncrypt(String mount, String keyName, String base64Plaintext,
                                   String namespaceOverride) throws VaultException {
         String path = "/v1/" + mount + "/encrypt/" + keyName;
@@ -342,16 +246,7 @@ public class VaultHttpClient {
         return ciphertext;
     }
 
-    /**
-     * Decrypts ciphertext using Transit secrets engine.
-     *
-     * @param mount             the Transit mount path
-     * @param keyName           the encryption key name
-     * @param ciphertext        the ciphertext to decrypt (format: vault:v{N}:...)
-     * @param namespaceOverride optional namespace override
-     * @return the plaintext (base64-encoded)
-     * @throws VaultException if decryption fails
-     */
+    /** Decrypts Transit ciphertext, returns base64-encoded plaintext. */
     public String transitDecrypt(String mount, String keyName, String ciphertext,
                                   String namespaceOverride) throws VaultException {
         String path = "/v1/" + mount + "/decrypt/" + keyName;
@@ -372,26 +267,13 @@ public class VaultHttpClient {
         return plaintext;
     }
 
-    /**
-     * Reads Transit key metadata.
-     *
-     * @param mount             the Transit mount path
-     * @param keyName           the key name
-     * @param namespaceOverride optional namespace override
-     * @return the key metadata response
-     * @throws VaultException if the read fails
-     */
+    /** Reads Transit key metadata. */
     public VaultResponse transitReadKey(String mount, String keyName, String namespaceOverride)
             throws VaultException {
         String path = "/v1/" + mount + "/keys/" + keyName;
         return get(path, namespaceOverride);
     }
 
-    /**
-     * Gets the base URL this client is configured to use.
-     *
-     * @return the Vault server base URL
-     */
     public String getBaseUrl() {
         return baseUrl;
     }

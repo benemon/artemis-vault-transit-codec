@@ -163,56 +163,30 @@ vault write -f auth/approle/role/artemis-codec/secret-id
 
 ## Usage
 
-### 1. Configure broker.xml
+For general password masking concepts (`artemis mask`, `ENC()` syntax, supported locations), see the [Artemis Password Masking documentation](https://artemis.apache.org/components/artemis/documentation/latest/masking-passwords.html).
 
-First, configure the codec in broker.xml:
+### 1. Configure broker.xml
 
 ```xml
 <core xmlns="urn:activemq:core">
-    <!-- Configure the codec -->
     <password-codec>com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis</password-codec>
+    <cluster-password>ENC(vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ)</cluster-password>
 </core>
 ```
 
 ### 2. Mask Passwords
 
-Use the Artemis CLI to encrypt passwords. The command reads the codec from broker.xml:
+Set Vault environment variables, then use the Artemis CLI:
 
 ```bash
 export VAULT_ADDR=https://vault:8200
 export VAULT_TOKEN=s.xxxxx
 
 ./bin/artemis mask myClusterPassword --password-codec=true
+# Output: vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ
 ```
 
-Output:
-```
-result: vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ
-```
-
-### 3. Update broker.xml with Encrypted Passwords
-
-Add the encrypted passwords to broker.xml, wrapped with `ENC()`:
-
-```xml
-<core xmlns="urn:activemq:core">
-    <!-- Configure the codec -->
-    <password-codec>com.hashicorp.artemis.VaultTransitCodec;transit-key=artemis</password-codec>
-
-    <!-- Use encrypted passwords -->
-    <cluster-password>ENC(vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ)</cluster-password>
-
-    <connectors>
-        <connector name="netty-connector">
-            tcp://remote-host:61616?sslEnabled=true;keyStorePassword=ENC(vault:v1:...)
-        </connector>
-    </connectors>
-</core>
-```
-
-### 4. Start Broker
-
-Ensure Vault environment variables are set, then start the broker:
+### 3. Start Broker
 
 ```bash
 export VAULT_ADDR=https://vault:8200
@@ -221,38 +195,9 @@ export VAULT_TOKEN_FILE=/vault/secrets/.vault-token
 ./artemis run
 ```
 
-Look for this log message to confirm successful initialization:
+Successful initialization:
 ```
 INFO  [com.hashicorp.artemis.VaultTransitCodec] VaultTransitCodec initialized. Vault: https://vault:8200, NS: (root), Mount: transit, Key: artemis, Auth: token
-```
-
-### 5. Update artemis-users.properties
-
-The codec also works with user passwords in `artemis-users.properties`. First mask each password using the codec configured in `broker.xml`:
-
-```bash
-./bin/artemis mask adminPassword123 --password-codec=true
-```
-
-Then update the properties file with encrypted passwords:
-
-```properties
-# artemis-users.properties
-# Format: username = ENC(ciphertext)
-
-admin = ENC(vault:v1:8SDd3WHDOjf7mq69CyCqYjBXAiQQAVZRkFM96XVZ)
-appuser = ENC(vault:v1:7KLm2XYDNef8nq58DzDrZkCXBjRRAWYSlGN85WVY)
-monitoring = ENC(vault:v1:9TRn4ZHFPgj9or79EAEsAlDZCkSSBUZTmHO97XWX)
-```
-
-Ensure `login.config` references the properties file with the password codec:
-
-```
-activemq {
-    org.apache.activemq.artemis.spi.core.security.jaas.PropertiesLoginModule required
-        org.apache.activemq.jaas.properties.user="artemis-users.properties"
-        org.apache.activemq.jaas.properties.role="artemis-roles.properties";
-};
 ```
 
 ## Troubleshooting
@@ -286,11 +231,9 @@ logger.vault-codec.level=DEBUG
 
 ## Security Considerations
 
-1. **Token Security**: Store Vault tokens in files with restricted permissions (600)
-2. **TLS**: Always use TLS in production (`https://` for Vault address)
-3. **Token Renewal**: The codec automatically renews tokens at 2/3 of TTL
-4. **AppRole**: Prefer AppRole over long-lived tokens in production
-5. **Cache**: Password cache is in-memory only; adjust `cache-ttl-seconds` based on security requirements
+- **Use AppRole in production** - Supports automatic re-authentication when tokens expire
+- **Always use TLS** - Set `VAULT_ADDR` to `https://` and configure CA certificates
+- **Restrict token file permissions** - Use mode 600 for any token or secret files
 
 ## License
 

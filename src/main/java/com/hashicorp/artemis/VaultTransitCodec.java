@@ -62,7 +62,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
 
     private static final Logger logger = LoggerFactory.getLogger(VaultTransitCodec.class);
 
-    // Environment variable names (standard Vault naming)
     private static final String ENV_VAULT_ADDR = "VAULT_ADDR";
     private static final String ENV_VAULT_TOKEN = "VAULT_TOKEN";
     private static final String ENV_VAULT_TOKEN_FILE = "VAULT_TOKEN_FILE";
@@ -75,7 +74,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private static final String ENV_VAULT_SECRET_ID_FILE = "VAULT_SECRET_ID_FILE";
     private static final String ENV_VAULT_NAMESPACE = "VAULT_NAMESPACE";
 
-    // Configuration parameter names (broker.xml)
     private static final String PARAM_VAULT_ADDR = "vault-addr";
     private static final String PARAM_TRANSIT_MOUNT = "transit-mount";
     private static final String PARAM_TRANSIT_KEY = "transit-key";
@@ -92,7 +90,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private static final String PARAM_NAMESPACE = "namespace";
     private static final String PARAM_TRANSIT_NAMESPACE = "transit-namespace";
 
-    // Default values
     private static final String DEFAULT_TRANSIT_MOUNT = "transit";
     private static final String DEFAULT_TRANSIT_KEY = "artemis";
     private static final AuthMethod DEFAULT_AUTH_METHOD = AuthMethod.TOKEN;
@@ -103,7 +100,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private static final long MAX_BACKOFF_MS = 800L;
     private static final long MIN_RENEWAL_INTERVAL_SECONDS = 60L;
 
-    // Configuration (set during init)
     private String vaultAddr;
     private String transitMount;
     private String transitKey;
@@ -113,7 +109,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     private int maxRetries;
     private int cacheTtlSeconds;
 
-    // Runtime state (thread-safe)
     private VaultHttpClient vaultClient;
     private VaultAuthenticator authenticator;
     private ConcurrentHashMap<String, CacheEntry> cache;
@@ -149,30 +144,17 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     public void init(Map<String, String> params) throws Exception {
         logger.debug("Initializing VaultTransitCodec with {} parameters", params.size());
 
-        // 1. Parse and validate configuration
         parseConfiguration(params);
-
-        // 2. Build SSL context
         SSLContext sslContext = buildSslContext(params);
-
-        // 3. Create Vault HTTP client
         vaultClient = new VaultHttpClient(vaultAddr, sslContext, namespace, null);
-
-        // 4. Authenticate (will set token on client)
         authenticate(params);
-
-        // 5. Verify Transit key is accessible
         verifyTransitKey();
 
-        // 6. Initialize cache if enabled
         if (cacheTtlSeconds > 0) {
             cache = new ConcurrentHashMap<>();
             logger.debug("Password cache enabled with TTL of {} seconds", cacheTtlSeconds);
-        } else {
-            logger.debug("Password cache disabled");
         }
 
-        // 7. Schedule token renewal
         scheduleTokenRenewal();
 
         if (transitNamespace != null) {
@@ -195,25 +177,14 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public String encode(Object secret) throws Exception {
-        logger.debug("VaultTransitCodec.encode() called - encrypting value via Vault Transit");
-        logger.debug("Encrypting using transit mount '{}', key '{}'", transitMount, transitKey);
-
         String plaintext = (String) secret;
-
-        // Base64 encode the plaintext (required by Vault Transit)
         String base64Encoded = Base64.getEncoder()
                 .encodeToString(plaintext.getBytes(StandardCharsets.UTF_8));
 
         try {
-            String ciphertext = vaultClient.transitEncrypt(
+            return vaultClient.transitEncrypt(
                     transitMount, transitKey, base64Encoded, transitNamespace);
-
-            logger.debug("VaultTransitCodec.encode() completed - value encrypted successfully");
-            logger.debug("Ciphertext prefix: {}", truncateForLog(ciphertext, 20));
-            return ciphertext;
-
         } catch (VaultException e) {
-            logger.error("VaultTransitCodec.encode() failed: {}", e.getMessage());
             throw translateException(e, "encrypt");
         }
     }
@@ -229,38 +200,27 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public String decode(Object mask) throws Exception {
-        logger.debug("VaultTransitCodec.decode() called - decrypting value via Vault Transit");
         String ciphertext = (String) mask;
-        logger.debug("Decrypting ciphertext with prefix: {}", truncateForLog(ciphertext, 20));
 
-        // Validate ciphertext format
         if (!ciphertext.startsWith("vault:v")) {
-            logger.error("Invalid ciphertext format - does not start with 'vault:v'");
             throw new IllegalArgumentException(
                     "Invalid ciphertext format. Expected: vault:v{N}:..., got: "
                             + truncateForLog(ciphertext, 20) + "...");
         }
 
-        // Check cache first
         if (cache != null) {
             CacheEntry entry = cache.get(ciphertext);
             if (entry != null && !entry.isExpired()) {
-                logger.debug("VaultTransitCodec.decode() completed - cache hit (no Vault call)");
-                logger.debug("Returning cached plaintext");
                 return entry.value;
             }
         }
 
-        // Decrypt with retry logic
         String plaintext = decryptWithRetry(ciphertext);
 
-        // Cache the result
         if (cache != null) {
             cache.put(ciphertext, new CacheEntry(plaintext, cacheTtlSeconds * 1000L));
-            logger.debug("Cached decrypted value with TTL of {} seconds", cacheTtlSeconds);
         }
 
-        logger.debug("VaultTransitCodec.decode() completed - value decrypted successfully");
         return plaintext;
     }
 
@@ -276,18 +236,13 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
      */
     @Override
     public boolean verify(char[] value, String encodedValue) {
-        logger.debug("VaultTransitCodec.verify() called - verifying password against encrypted value");
         try {
             String decoded = decode(encodedValue);
-            // Use constant-time comparison to prevent timing attacks
+            // Constant-time comparison to prevent timing attacks
             byte[] a = new String(value).getBytes(StandardCharsets.UTF_8);
             byte[] b = decoded.getBytes(StandardCharsets.UTF_8);
-            boolean matches = MessageDigest.isEqual(a, b);
-            logger.debug("VaultTransitCodec.verify() completed - match: {}", matches);
-            return matches;
+            return MessageDigest.isEqual(a, b);
         } catch (Exception e) {
-            // Never throw from verify() - return false on any error
-            logger.warn("VaultTransitCodec.verify() failed with exception: {}", e.getMessage());
             logger.debug("Password verification failed", e);
             return false;
         }
@@ -306,10 +261,7 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    // --- Configuration parsing ---
-
     private void parseConfiguration(Map<String, String> params) {
-        // Vault address (required)
         vaultAddr = getConfig(params, PARAM_VAULT_ADDR, ENV_VAULT_ADDR, null);
         if (vaultAddr == null || vaultAddr.isBlank()) {
             throw new IllegalArgumentException(
@@ -318,32 +270,19 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                             + PARAM_VAULT_ADDR + " parameter.");
         }
 
-        // Transit mount path (allows cross-namespace access)
         transitMount = getConfig(params, PARAM_TRANSIT_MOUNT, null, DEFAULT_TRANSIT_MOUNT);
-
-        // Transit key
         transitKey = getConfig(params, PARAM_TRANSIT_KEY, null, DEFAULT_TRANSIT_KEY);
-
-        // Vault namespace (for Vault Enterprise)
         namespace = getConfig(params, PARAM_NAMESPACE, ENV_VAULT_NAMESPACE, null);
-        if (namespace != null) {
-            logger.debug("Using Vault namespace for auth: {}", namespace);
-        }
 
-        // Transit namespace (only if explicitly configured and different from auth namespace)
+        // Transit namespace only if explicitly different from auth namespace
         String explicitTransitNs = getConfig(params, PARAM_TRANSIT_NAMESPACE, null, null);
         if (explicitTransitNs != null && !explicitTransitNs.equals(namespace)) {
             transitNamespace = explicitTransitNs;
-            logger.debug("Using separate namespace for Transit operations: {}", transitNamespace);
-        } else {
-            transitNamespace = null;  // Will use same namespace as auth
         }
 
-        // Authentication method
         String authMethodStr = getConfig(params, PARAM_AUTH_METHOD, null, DEFAULT_AUTH_METHOD.getValue());
         authMethod = AuthMethod.fromValue(authMethodStr);
 
-        // Max retries
         String maxRetriesStr = getConfig(params, PARAM_MAX_RETRIES, null, String.valueOf(DEFAULT_MAX_RETRIES));
         try {
             maxRetries = Integer.parseInt(maxRetriesStr);
@@ -355,7 +294,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                     "Invalid max-retries value: '" + maxRetriesStr + "'. Must be a non-negative integer.");
         }
 
-        // Cache TTL
         String cacheTtlStr = getConfig(params, PARAM_CACHE_TTL_SECONDS, null, String.valueOf(DEFAULT_CACHE_TTL_SECONDS));
         try {
             cacheTtlSeconds = Integer.parseInt(cacheTtlStr);
@@ -368,18 +306,12 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    /**
-     * Builds SSL context from configuration parameters.
-     */
     private SSLContext buildSslContext(Map<String, String> params)
             throws GeneralSecurityException, IOException {
-        String skipVerify = getConfig(
-                params, PARAM_SKIP_VERIFY, ENV_VAULT_SKIP_VERIFY, "false");
+        String skipVerify = getConfig(params, PARAM_SKIP_VERIFY, ENV_VAULT_SKIP_VERIFY, "false");
         if (Boolean.parseBoolean(skipVerify)) {
             logger.warn("TLS certificate verification disabled. Not recommended for production.");
-            return SslContextBuilder.create()
-                    .withSkipVerify(true)
-                    .build();
+            return SslContextBuilder.create().withSkipVerify(true).build();
         }
 
         String caCert = getConfig(params, PARAM_CA_CERT, ENV_VAULT_CACERT, null);
@@ -397,44 +329,32 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
             return builder.build();
         }
 
-        // No custom SSL config - use default
         return null;
     }
-
-    // --- Authentication ---
 
     private void authenticate(Map<String, String> params) throws Exception {
         authenticator = createAuthenticator(params);
         authenticator.authenticate(vaultClient);
     }
 
-    /**
-     * Creates the appropriate authenticator based on configuration.
-     *
-     * <p>This method implements the factory pattern, returning the correct
-     * authenticator implementation based on the configured auth method.
-     *
-     * @param params configuration parameters
-     * @return the configured authenticator
-     */
     private VaultAuthenticator createAuthenticator(Map<String, String> params) {
         if (authMethod == AuthMethod.APPROLE) {
             return createAppRoleAuthenticator(params);
-        } else {
+        }
+        if (authMethod == AuthMethod.TOKEN) {
             return createTokenAuthenticator(params);
         }
+        throw new IllegalStateException(
+                "Unsupported auth method: " + authMethod + ". This should not happen - " +
+                "AuthMethod.fromValue() should have rejected invalid values.");
     }
 
     private TokenAuthenticator createTokenAuthenticator(Map<String, String> params) {
-        // Resolution order: VAULT_TOKEN env → VAULT_TOKEN_FILE / token-path file
-        String tokenPath = getConfig(
-                params, PARAM_TOKEN_PATH, ENV_VAULT_TOKEN_FILE, DEFAULT_TOKEN_PATH);
-
+        String tokenPath = getConfig(params, PARAM_TOKEN_PATH, ENV_VAULT_TOKEN_FILE, DEFAULT_TOKEN_PATH);
         return TokenAuthenticator.create(ENV_VAULT_TOKEN, tokenPath);
     }
 
     private AppRoleAuthenticator createAppRoleAuthenticator(Map<String, String> params) {
-        // Role ID resolution
         String roleId = getConfig(params, PARAM_APPROLE_ID, ENV_VAULT_ROLE_ID, null);
         if (roleId == null || roleId.isBlank()) {
             throw new SecurityException(
@@ -442,44 +362,28 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                             + " environment variable or " + PARAM_APPROLE_ID + " parameter.");
         }
 
-        // Secret file path (preferred for re-authentication support)
-        String secretFile = getConfig(
-                params, PARAM_APPROLE_SECRET_FILE, ENV_VAULT_SECRET_ID_FILE, null);
-
+        String secretFile = getConfig(params, PARAM_APPROLE_SECRET_FILE, ENV_VAULT_SECRET_ID_FILE, null);
         return AppRoleAuthenticator.create(roleId, ENV_VAULT_SECRET_ID, secretFile);
     }
 
-    // --- Transit key verification ---
-
     private void verifyTransitKey() throws Exception {
         try {
-            // Try to read key info - verifies the key exists and we have access
-            VaultResponse response = vaultClient.transitReadKey(
-                    transitMount, transitKey, transitNamespace);
-
-            // Empty response means key not found
+            VaultResponse response = vaultClient.transitReadKey(transitMount, transitKey, transitNamespace);
             if (response.getData() == null || response.getData().isEmpty()) {
                 throw new IllegalStateException(
-                        "Transit key '" + transitKey + "' not found at mount '"
-                                + transitMount + "'. Create it with: vault write -f "
-                                + transitMount + "/keys/" + transitKey);
+                        "Transit key '" + transitKey + "' not found at mount '" + transitMount
+                                + "'. Create it with: vault write -f " + transitMount + "/keys/" + transitKey);
             }
-
-            logger.debug("Transit key '{}' verified at mount '{}'", transitKey, transitMount);
-
         } catch (VaultException e) {
             int status = e.getHttpStatusCode();
             if (status == 403 || status == 412) {
                 // 403: No read permission, but may have encrypt/decrypt
-                // 412: Vault Enterprise replication lag on reads
-                // Both cases: fall back to testing encrypt/decrypt (writes are consistent)
-                logger.debug("Cannot read transit key ({}), testing encrypt/decrypt", status);
+                // 412: Vault Enterprise replication lag - fall back to encrypt/decrypt test
                 testEncryptDecrypt();
             } else if (status == 404) {
                 throw new IllegalStateException(
-                        "Transit key '" + transitKey + "' not found at mount '"
-                                + transitMount + "'. Create it with: vault write -f "
-                                + transitMount + "/keys/" + transitKey);
+                        "Transit key '" + transitKey + "' not found at mount '" + transitMount
+                                + "'. Create it with: vault write -f " + transitMount + "/keys/" + transitKey);
             } else {
                 throw new IllegalStateException(
                         "Cannot verify transit key '" + transitKey + "': " + e.getMessage(), e);
@@ -512,8 +416,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
             throw e;
         }
     }
-
-    // --- Decrypt with retry ---
 
     private String decryptWithRetry(String ciphertext) throws Exception {
         Exception lastException = null;
@@ -555,7 +457,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
     }
 
     private long calculateBackoff(int attempt) {
-        // Exponential backoff: 100ms, 200ms, 400ms, ...
         long delay = INITIAL_BACKOFF_MS * (1L << (attempt - 1));
         return Math.min(delay, MAX_BACKOFF_MS);
     }
@@ -574,8 +475,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
                     "Vault " + operation + " failed: " + e.getMessage(), e);
         }
     }
-
-    // --- Token renewal ---
 
     private void scheduleTokenRenewal() {
         renewalExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -625,20 +524,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    /**
-     * Attempts to re-authenticate when token renewal fails.
-     *
-     * <p>This method is called when token renewal fails, which typically happens when:
-     * <ul>
-     *   <li>Token has reached its max TTL and cannot be renewed further</li>
-     *   <li>Token was revoked</li>
-     *   <li>Token accessor was invalidated</li>
-     * </ul>
-     *
-     * <p>If the authenticator supports re-authentication (e.g., AppRole with secret file),
-     * it will obtain fresh credentials and perform a new login. Otherwise, manual
-     * intervention is required.
-     */
     private void attemptReauthentication() {
         if (authenticator == null) {
             logger.error("No authenticator configured. Broker may lose Vault access.");
@@ -664,11 +549,6 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    /**
-     * Reschedules token renewal after re-authentication.
-     *
-     * <p>Called after successful re-authentication to set up renewal based on the new token's TTL.
-     */
     private void rescheduleTokenRenewal() {
         try {
             VaultResponse lookupResponse = vaultClient.lookupSelf();
@@ -691,33 +571,20 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         }
     }
 
-    // --- Utility methods ---
-
-    /**
-     * Get configuration value with resolution order: param → env → default.
-     */
     private String getConfig(Map<String, String> params, String paramName, String envName, String defaultValue) {
-        // Check broker.xml parameter first
         String value = params.get(paramName);
         if (value != null && !value.isBlank()) {
             return value;
         }
-
-        // Check environment variable
         if (envName != null) {
             value = System.getenv(envName);
             if (value != null && !value.isBlank()) {
                 return value;
             }
         }
-
-        // Return default
         return defaultValue;
     }
 
-    /**
-     * Truncate string for logging (avoid logging full ciphertext).
-     */
     private String truncateForLog(String value, int maxLength) {
         if (value == null) {
             return "null";
@@ -728,34 +595,20 @@ public class VaultTransitCodec implements SensitiveDataCodec<String>, Closeable 
         return value.substring(0, maxLength);
     }
 
-    // --- For testing ---
-
-    /**
-     * Package-private getter for testing cache state.
-     */
     ConcurrentHashMap<String, CacheEntry> getCache() {
         return cache;
     }
 
-    /**
-     * Package-private method to clear cache for testing.
-     */
     void clearCache() {
         if (cache != null) {
             cache.clear();
         }
     }
 
-    /**
-     * Package-private getter for injecting a mock VaultHttpClient in tests.
-     */
     void setVaultClient(VaultHttpClient client) {
         this.vaultClient = client;
     }
 
-    /**
-     * Package-private getter for the Vault client (for testing).
-     */
     VaultHttpClient getVaultClient() {
         return vaultClient;
     }

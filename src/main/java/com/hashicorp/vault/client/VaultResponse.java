@@ -68,72 +68,32 @@ public class VaultResponse {
         return new VaultResponse(status, data, auth, leaseId, leaseDuration, renewable);
     }
 
-    /**
-     * Gets the HTTP status code.
-     *
-     * @return the status code
-     */
     public int getStatus() {
         return status;
     }
 
-    /**
-     * Gets the 'data' field from the response.
-     *
-     * <p>This field contains the actual response data for most Vault operations
-     * (secrets, Transit encrypt/decrypt, etc.).
-     *
-     * @return the data map, or null if not present
-     */
+    /** Contains response data for secret/Transit operations. */
     public Map<String, Object> getData() {
         return data;
     }
 
-    /**
-     * Gets the 'auth' field from the response.
-     *
-     * <p>This field contains authentication information (token, policies, etc.)
-     * for login and token operations.
-     *
-     * @return the auth map, or null if not present
-     */
+    /** Contains authentication info (token, policies) for login operations. */
     public Map<String, Object> getAuth() {
         return auth;
     }
 
-    /**
-     * Gets the lease ID if the response includes a lease.
-     *
-     * @return the lease ID, or null if not present
-     */
     public String getLeaseId() {
         return leaseId;
     }
 
-    /**
-     * Gets the lease duration in seconds.
-     *
-     * @return the lease duration, or 0 if not present
-     */
     public long getLeaseDuration() {
         return leaseDuration;
     }
 
-    /**
-     * Checks if the lease/token is renewable.
-     *
-     * @return true if renewable
-     */
     public boolean isRenewable() {
         return renewable;
     }
 
-    /**
-     * Gets a string value from the data field.
-     *
-     * @param key the key to look up
-     * @return the string value, or null if not present or not a string
-     */
     public String getDataString(String key) {
         if (data == null) {
             return null;
@@ -142,30 +102,14 @@ public class VaultResponse {
         return value instanceof String ? (String) value : null;
     }
 
-    /**
-     * Gets a long value from the data field.
-     *
-     * @param key          the key to look up
-     * @param defaultValue the value to return if not present
-     * @return the long value, or defaultValue if not present
-     */
     public long getDataLong(String key, long defaultValue) {
         if (data == null) {
             return defaultValue;
         }
         Object value = data.get(key);
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
-        }
-        return defaultValue;
+        return value instanceof Number ? ((Number) value).longValue() : defaultValue;
     }
 
-    /**
-     * Gets a string value from the auth field.
-     *
-     * @param key the key to look up
-     * @return the string value, or null if not present
-     */
     public String getAuthString(String key) {
         if (auth == null) {
             return null;
@@ -174,13 +118,6 @@ public class VaultResponse {
         return value instanceof String ? (String) value : null;
     }
 
-    /**
-     * Gets a long value from the auth field.
-     *
-     * @param key          the key to look up
-     * @param defaultValue the value to return if not present
-     * @return the long value, or defaultValue
-     */
     public long getAuthLong(String key, long defaultValue) {
         if (auth == null) {
             return defaultValue;
